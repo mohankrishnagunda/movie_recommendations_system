@@ -7,9 +7,8 @@ import requests
 
 # Page configuration
 st.set_page_config(
-    page_title="Movie recommender",
+    page_title="Personalized Movie Recommendation System",
     layout="centered",  # Adjust layout to 'centered' for a cleaner look
-    page_icon="🎥",
 )
 
 # Custom CSS for styling
@@ -78,7 +77,7 @@ def recommend_display(new_df):
     """
     Display movie recommendations and handle movie selection with a predictive search bar.
     """
-    st.markdown("<h1 class='title'>🎥 Movie Recommender</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='title'>Personalized Movie Recommendation System</h1>", unsafe_allow_html=True)
     st.markdown("<div class='recommend-section'>", unsafe_allow_html=True)
 
     # Get unique movie titles for the search bar
