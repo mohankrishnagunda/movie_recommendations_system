@@ -45,110 +45,108 @@ if "selected_movie_name" not in st.session_state:
     st.session_state["selected_movie_name"] = None
 
 if "show_recommendations" not in st.session_state:
-    st.session_state["show_recommendations"] = True
+    st.session_state["show_recommendations"] = False
 
-# TMDB API key
+# TMDB API key (Replace with your actual key)
 TMDB_API_KEY = "d543024474e640f3980a08dfd2750403"
 
-def fetch_posters(movie_id):
+def fetch_movie_details(movie_name):
     """
-    Fetch the poster URL for a given movie ID using TMDB API.
+    Fetch movie details using TMDB API for a given movie name.
     """
-    response = requests.get(
-        f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={TMDB_API_KEY}"
-    )
+    search_url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}"
+    response = requests.get(search_url)
     data = response.json()
+
     try:
-        return f"https://image.tmdb.org/t/p/w780/{data['poster_path']}"
-    except KeyError:
-        return "https://via.placeholder.com/150"
+        movie_id = data['results'][0]['id']
+        movie_details_url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={TMDB_API_KEY}"
+        movie_details_response = requests.get(movie_details_url)
+        movie_details = movie_details_response.json()
+
+        title = movie_details['title']
+        rating = movie_details.get('vote_average', 'N/A')
+        runtime = movie_details.get('runtime', 'N/A')
+        overview = movie_details.get('overview', 'Overview not available.')
+        poster_url = f"https://image.tmdb.org/t/p/w780/{movie_details['poster_path']}" if 'poster_path' in movie_details else "https://via.placeholder.com/150"
+
+        return title, rating, runtime, overview, poster_url
+    except (IndexError, KeyError):
+        return None, None, None, None, None
 
 def recommend_display(new_df):
     """
-    Display movie recommendations and handle movie selection with a predictive dropdown.
+    Display movie recommendations and handle movie selection with a predictive search bar.
     """
     st.markdown("<h1 class='title'>🎥 Movie Recommender</h1>", unsafe_allow_html=True)
     st.markdown("<div class='recommend-section'>", unsafe_allow_html=True)
 
-    # Get unique movie titles for the dropdown
+    # Get unique movie titles for the search bar
     movie_titles = new_df["title"].dropna().unique().tolist()
 
-    # Predictive dropdown for movie search
-    search_query = st.selectbox(
+    # Predictive search bar for movie search
+    search_query = st.text_input(
         "Search for a Movie:",
-        options=[""] + movie_titles,
-        format_func=lambda x: "Type to search..." if x == "" else x,
+        value="",
+        placeholder="Type the movie name...",
     )
 
-    recommend_button = st.button("Get Recommendations")
+    recommend_button = st.button("Get Movie Details")
 
     if recommend_button:
-        if search_query and search_query != "Type to search...":
+        if search_query:
             movie_found = new_df[new_df["title"].str.contains(search_query, case=False, na=False)]
             if not movie_found.empty:
                 st.session_state["selected_movie_name"] = movie_found["title"].iloc[0]
-                st.session_state["show_recommendations"] = True
+                st.session_state["show_recommendations"] = False
                 st.experimental_rerun()
             else:
                 st.error("Movie not found. Please try another name.")
         else:
-            st.warning("Please select or enter a movie name before clicking 'Get Recommendations'.")
+            st.warning("Please enter a movie name before clicking 'Get Movie Details'.")
 
     if st.session_state["selected_movie_name"]:
-        st.subheader(f"Recommended Movies for '{st.session_state['selected_movie_name']}'")
+        # Display selected movie details first
+        selected_movie_name = st.session_state["selected_movie_name"]
+        title, rating, runtime, overview, poster_url = fetch_movie_details(selected_movie_name)
+
+        if title:
+            st.markdown("### Movie Details")
+            # Create two columns: one for the poster, one for the details
+            col1, col2 = st.columns([1, 2])  # 1 for the poster, 2 for the details
+
+            with col1:
+                st.image(poster_url, width=200)
+
+            with col2:
+                st.subheader(f"{title}")
+                st.text(f"Rating: {rating}")
+                st.text(f"Runtime: {runtime} minutes")
+                st.write("Overview:")
+                st.write(overview)
+
+        else:
+            st.warning("Movie details not available.")
+        
+        # Now show movie recommendations
+        st.subheader(f"Recommended Movies for '{selected_movie_name}'")
         st.write("---")
         try:
-            movies, posters = preprocess.recommend(new_df, st.session_state["selected_movie_name"], r"Files/similarity_tags_tags.pkl")
+            movies, posters = preprocess.recommend(new_df, selected_movie_name, r"Files/similarity_tags_tags.pkl")
             for i in range(0, len(movies), 4):
                 cols = st.columns(4)
                 for j, col in enumerate(cols):
                     if i + j < len(movies):
                         with col:
-                            # Use a unique key by combining movie title and index
                             st.image(posters[i + j], width=140)
-                            if st.button(movies[i + j], key=f"movie_{movies[i + j]}_{i + j}"):
+                            st.subheader(movies[i + j])
+                            if st.button(f"See {movies[i + j]}", key=f"movie_{movies[i + j]}_{i + j}"):
                                 st.session_state["selected_movie_name"] = movies[i + j]
                                 st.session_state["show_recommendations"] = False
                                 st.experimental_rerun()
         except Exception as e:
             st.error(f"Error fetching recommendations: {e}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-def display_movie_details():
-    """
-    Display details for the selected movie.
-    """
-    selected_movie_name = st.session_state.get("selected_movie_name", None)
-
-    if not selected_movie_name:
-        st.warning("No movie selected. Please select a movie from recommendations.")
-        return
-
-    st.markdown("<div class='details-section'>", unsafe_allow_html=True)
-    st.title(f"🎥 Details for {selected_movie_name}")
-    st.write("---")
-
-    try:
-        info = preprocess.get_details(selected_movie_name)
-        if not info:
-            st.warning("Details not available for the selected movie.")
-            return
-
-        image_col, text_col = st.columns((1, 2))
-        with image_col:
-            st.image(info[0], width=140)
-
-        with text_col:
-            st.subheader(selected_movie_name)
-            st.text(f"Rating: {info[8]} | Runtime: {info[6]}")
-            st.write("Overview:")
-            st.write(info[3])
-
-        if st.button("Back to Recommendations"):
-            st.session_state["show_recommendations"] = True
-            st.experimental_rerun()
-    except Exception as e:
-        st.error(f"Error fetching movie details: {e}")
+        
     st.markdown("</div>", unsafe_allow_html=True)
 
 def main():
@@ -162,8 +160,9 @@ def main():
         if st.session_state["show_recommendations"]:
             recommend_display(new_df)
         else:
-            display_movie_details()
+            recommend_display(new_df)  # Keeps the logic running for recommendations after movie details
 
 if __name__ == "__main__":
     main()
+
 
